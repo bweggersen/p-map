@@ -40,3 +40,5 @@ export type Mapper<Element = any, NewElement = any> = (input: Element, index: nu
  * })();
  */
 export default function <Element, NewElement>(input: Iterable<Element>, mapper: Mapper<Element, NewElement>, options?: Options): Promise<NewElement[]>;
+
+export const NO_AVAILABLE_JOBS = 'NO_AVAILABLE_JOBS';

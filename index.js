@@ -1,5 +1,7 @@
 'use strict';
 
+const NO_AVAILABLE_JOBS = 'NO_AVAILABLE_JOBS';
+
 const pMap = (iterable, mapper, options) => new Promise((resolve, reject) => {
 	options = Object.assign({
 		concurrency: Infinity
@@ -17,19 +19,26 @@ const pMap = (iterable, mapper, options) => new Promise((resolve, reject) => {
 
 	const ret = [];
 	const iterator = iterable[Symbol.iterator]();
+	const pausedThreads = [];
 	let isRejected = false;
 	let isIterableDone = false;
 	let resolvingCount = 0;
 	let currentIndex = 0;
 
-	const next = () => {
+	const next = (thread, index) => {
 		if (isRejected) {
 			return;
 		}
 
 		const nextItem = iterator.next();
-		const i = currentIndex;
-		currentIndex++;
+
+		let i;
+		if (index) {
+			i = index;
+		} else {
+			i = currentIndex;
+			currentIndex++;
+		}
 
 		if (nextItem.done) {
 			isIterableDone = true;
@@ -49,9 +58,21 @@ const pMap = (iterable, mapper, options) => new Promise((resolve, reject) => {
 				value => {
 					ret[i] = value;
 					resolvingCount--;
-					next();
+					next(thread);
+
+					// Start paused threads
+					while (pausedThreads.length) {
+						const [pausedThread, pausedIndex] = pausedThreads.shift();
+						next(pausedThread, pausedIndex);
+					}
 				},
 				error => {
+					if (error === NO_AVAILABLE_JOBS) {
+						pausedThreads.push([thread, i]);
+						resolvingCount--;
+						return;
+					}
+
 					isRejected = true;
 					reject(error);
 				}
@@ -59,7 +80,7 @@ const pMap = (iterable, mapper, options) => new Promise((resolve, reject) => {
 	};
 
 	for (let i = 0; i < concurrency; i++) {
-		next();
+		next(i);
 
 		if (isIterableDone) {
 			break;
@@ -69,3 +90,4 @@ const pMap = (iterable, mapper, options) => new Promise((resolve, reject) => {
 
 module.exports = pMap;
 module.exports.default = pMap;
+module.exports.NO_AVAILABLE_JOBS = NO_AVAILABLE_JOBS;
