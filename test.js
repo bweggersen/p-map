@@ -62,6 +62,60 @@ test('async with concurrency: 2 (out of order time sequence)', async t => {
 	t.deepEqual(result, input);
 });
 
+test('async with concurrency: 2 (pausable threads)', async t => {
+	/*
+	 With `hasAvailableJob` we create a made-up scenario where the iterator
+	 can't provide the next value, but the iterator is not done either. We use
+	 `Promise.reject(pMap.NO_AVAILABLE_JOBS)` to communicate to pMaps that pMaps
+	 should pause the thread.
+	*/
+	const hasAvailableJob = callCounter => callCounter !== 3;
+
+	const dataStream = [200, 100, 75, 25];
+
+	let callCounter = 0;
+	const iterable = {
+		data: dataStream,
+		next() {
+			callCounter++;
+			return {
+				done: this.data.length === 0,
+				value: hasAvailableJob(callCounter) ?
+					this.data.shift() :
+					Promise.reject(pMap.NO_AVAILABLE_JOBS)
+			};
+		},
+		[Symbol.iterator]() {
+			return this;
+		}
+	};
+
+	/*
+	 Without pausable threads, thread 1 would pick up the 200 task and thread 2
+	 would pick up the 100, 75 and 25 tasks.
+
+	 With pausable threads, thread 1 will pick up the 200 task and thread 2 will
+	 pick the 100 task. Then, at `callCounter === 3` there will be an interrupt
+	 causing thread 2 to be paused. Thread 1 will pick up 75 and at then end of
+	 its execution start thread 2 again, which will pick up the final task, 25.
+	*/
+	const expectedPattern = [1, 2, 1, 2];
+	const actualPattern = [];
+
+	let concurrentTasks = 0;
+
+	await pMap(iterable, async value => {
+		concurrentTasks++;
+		actualPattern.push(concurrentTasks);
+
+		await delay(value);
+
+		concurrentTasks--;
+	}, {concurrency: 2});
+
+	t.deepEqual(actualPattern, expectedPattern);
+});
+
 test('enforce number in options.concurrency', async t => {
 	await t.throwsAsync(pMap([], () => {}, {concurrency: 0}), TypeError);
 	await t.throwsAsync(pMap([], () => {}, {concurrency: undefined}), TypeError);
