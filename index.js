@@ -51,11 +51,26 @@ const pMap = (iterable, mapper, options) => new Promise((resolve, reject) => {
 		}
 
 		resolvingCount++;
-
+		let packageName = "";
+		let operationTime = Date.now();
 		Promise.resolve(nextItem.value)
-			.then(element => mapper(element, i))
+			.then(element => {
+				packageName = element.name || "";
+				return mapper(element, i);
+			})
 			.then(
-				value => {
+				val => {
+					process.stdout.write(
+						"END," +
+							thread +
+							"," +
+							packageName +
+							"," +
+							operationTime.toString() +
+							"," +
+							(Date.now() - operationTime).toString() +
+							"\n"
+					);
 					ret[i] = value;
 					resolvingCount--;
 					next(thread);
